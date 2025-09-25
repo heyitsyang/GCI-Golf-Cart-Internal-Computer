@@ -1,0 +1,7 @@
+
+/*
+ * PROTOTYPES
+ */
+
+
+void readMacAddress();
