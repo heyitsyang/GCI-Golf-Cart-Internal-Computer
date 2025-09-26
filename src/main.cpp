@@ -11,11 +11,14 @@
 
 #define SCREEN_TIMEOUT 45 // seconds
 
-#define BUTTON_PIN 12     // GPIO34-39 do not have pullups
-#define ONE_WIRE_PIN 13   // DS18B20 temperature sensor and any other One-Wire
+#define BUTTON_PIN 12       // GPIO34-39 do not have pullups
+#define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
+#define ADC_FUEL_PIN 36     // 3.3v max
+#define ADC_BATTERY_PIN 39  // 3.3v max
 
-//#define GC_DISP_MAC_ADDR_STR "14:33:5C:6B:E8:EC"  // MAC address of the remote device goes here
-
+#ifndef GC_DISP_MAC_ADDR_STR                        // if not already defined in secrets.h
+  #define GC_DISP_MAC_ADDR_STR "A1:B2:C3:D4:E5:F6"  // replace with MAC address of the Golf Cart Display
+#endif
 
 TFT_eSPI tft = TFT_eSPI(); // Create a TFT_eSPI object
 
@@ -41,7 +44,7 @@ typedef struct struct_message_out {
   float airTemp;
   float battVolts;
   float fuel;
-} struct_message_out;
+} structMsgOut;
 
 // vawriables for inbound data
 int incomingCmd;
@@ -49,15 +52,17 @@ int incomingCmd;
 typedef struct struct_message_in {
   int gcdCmd;
 
-} struct_message_in;
+} structMsgIn;
 
 // Create a struct_message called BME280Readings to hold sensor readings
-struct_message_out dataOut;
+structMsgOut dataOut;
 
 // Create a struct_message to hold incoming sensor readings
-struct_message_in dataIn;
+structMsgIn dataIn;
 
 esp_now_peer_info_t peerInfo;
+
+String tx_success;   // Variable to store if sending data was successful
 
 
 /**************
@@ -73,7 +78,7 @@ void setup(void) {
 
   // Initialize WiFi to enable MAC address reading
   WiFi.mode(WIFI_STA);
-  
+
   tft.init(); // Initialize the display
   tft.setRotation(1); // Set the rotation to landscape mode (optional)
 
@@ -88,7 +93,30 @@ void setup(void) {
   tft.println(thisDeviceMacStr);        // Display on TFT
   Serial.println(thisDeviceMacStr);     // Display on Serial
 
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  // Once ESPNow is successfully Init, we will register for Send CB to
+  // get the status of Trasnmitted packet
+  esp_now_register_send_cb(OnDataSent);
+
+  // Register peer
   parseMacAddressStr(GC_DISP_MAC_ADDR_STR, gcdAddress);    // Parse GCD MAC address string into a byte array for ESP-NOW
+  memcpy(peerInfo.peer_addr, gcdAddress, 6);
+  peerInfo.channel = 1;  // corresponds to WiFi channels 1-14 - must match for peers to communicate
+  peerInfo.encrypt = false;
+  
+  // Add peer        
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    Serial.println("Failed to add peer");
+    return;
+  }
+  // Register for a callback function that will be called when data is received
+  esp_now_register_recv_cb(esp_now_recv_cb_t(OnDataRecv));
+
 
   screenStartTime = millis();   // Record screen start time
 
@@ -107,7 +135,10 @@ void loop() {
   tempC_0 = sensors.getTempCByIndex(0);
   tempF_0 = tempC_0 * 9.0 / 5.0 + 32.0;
 
-  tft.setCursor(1, 40); // Set cursor position
+  // Clear temperature value area
+  tft.fillRect(60, 36, 260, 20, TFT_BLACK);
+
+  tft.setCursor(1, 36); // Set cursor position
   tft.setTextFont(2); // Set font size small
   tft.print("TEMP ");
   tft.setTextFont(4); // Set font size medium
@@ -122,6 +153,27 @@ void loop() {
     Serial.println("No sensor");
   }
 
+  // read ADC values
+  int raw_fuel = analogRead(ADC_FUEL_PIN);
+  int raw_batt = analogRead(ADC_BATTERY_PIN);
+
+  // Clear fuel and battery value areas
+  tft.fillRect(60, 60, 260, 20, TFT_BLACK);
+
+  tft.setCursor(1, 60); // Set cursor position
+  tft.setTextFont(2); // Set font size small
+  tft.print("FUEL ");
+  tft.setTextFont(4); // Set font size medium
+  tft.print(raw_fuel);
+  Serial.println("raw_fuel: ");
+  Serial.print(raw_fuel);
+
+  tft.setTextFont(2); // Set font size small
+  tft.print("        BATT ");
+  tft.setTextFont(4); // Set font size medium
+  tft.print(raw_batt);
+  Serial.println("raw_batt: ");
+  Serial.print(raw_batt);
 
   // Check for button press to turn screen back on
   if (!screenOn && digitalRead(BUTTON_PIN) == LOW) {
@@ -169,4 +221,25 @@ void parseMacAddressStr(const char* macStr, uint8_t* macBytes) {
   sscanf(macStr, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx",
          &macBytes[0], &macBytes[1], &macBytes[2],
          &macBytes[3], &macBytes[4], &macBytes[5]);
+}
+
+// Callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  if (status ==0){
+    tx_success = "Delivery Success :)";
+  }
+  else{
+    tx_success = "Delivery Fail :(";
+  }
+}
+
+// Callback when data is received
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  memcpy(&dataIn, incomingData, sizeof(dataIn));
+  Serial.print("Bytes received: ");
+  Serial.println(len);
+  incomingCmd = dataIn.gcdCmd;
+
 }
