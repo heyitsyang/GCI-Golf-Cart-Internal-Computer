@@ -22,6 +22,8 @@
   #define GC_DISP_MAC_ADDR_STR "A1:B2:C3:D4:E5:F6"  // replace with MAC address of the Golf Cart Display
 #endif
 
+#define ESPNOW_CHANNEL 1
+
 TFT_eSPI tft = TFT_eSPI(); // Create a TFT_eSPI object
 
 OneWire oneWire(ONE_WIRE_PIN);        // Setup a oneWire instance to communicate with any OneWire device
@@ -71,7 +73,7 @@ String tx_success;   // Variable to store if sending data was successful
  **************/
 
 void setup(void) {
-  Serial.begin(115200);
+  Serial.begin(9600);
   sensors.begin();
 
   // Initialize button pin with pullup
@@ -107,7 +109,7 @@ void setup(void) {
   // Register peer
   parseMacAddressStr(GC_DISP_MAC_ADDR_STR, gcdAddress);    // Parse GCD MAC address string into a byte array for ESP-NOW
   memcpy(peerInfo.peer_addr, gcdAddress, 6);
-  peerInfo.channel = 1;  // corresponds to WiFi channels 1-14 - must match for peers to communicate
+  peerInfo.channel = ESPNOW_CHANNEL;  // corresponds to WiFi channels 1-14 - must match for peers to communicate
   peerInfo.encrypt = false;
   
   // Add peer        
@@ -160,17 +162,22 @@ void loop() {
     sensors.requestTemperatures();
     tempC_0 = sensors.getTempCByIndex(0);
     tempF_0 = tempC_0 * 9.0 / 5.0 + 32.0;
-    dataToGcd.airTemp = tempF_0;
 
     // Read ADC values
     raw_fuel = analogRead(ADC_FUEL_PIN);
     raw_batt = analogRead(ADC_BATTERY_PIN);
-    dataToGcd.fuel = raw_fuel;
+
+
+    // stuff the dataToGcd structure for transmission
+    dataToGcd.modeLights = modeHeadLights;
+    dataToGcd.outdoorLum = outdoorLuminosity;
+    dataToGcd.airTemp = tempF_0;
     dataToGcd.battVolts = raw_batt;
+    dataToGcd.fuel = raw_fuel;
 
     sendData = true;
 
-    // Send data to GCD
+    // Send data to GCD (Golf Cart Display)
     esp_err_t result = esp_now_send(gcdAddress, (uint8_t *) &dataToGcd, sizeof(dataToGcd));
     lastGcdSendTime = millis();
 
