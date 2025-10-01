@@ -273,6 +273,12 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 
 // Callback when data is received
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  // Filter: only accept messages from the Golf Cart Display
+  if (memcmp(mac, gcdAddress, 6) != 0) {
+    Serial.println("Ignored message from unknown peer");
+    return;
+  }
+
   memcpy(&dataFromGcd, incomingData, sizeof(dataFromGcd));
   Serial.print("Bytes received: ");
   Serial.println(len);
