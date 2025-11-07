@@ -66,7 +66,7 @@ def create_factory_bin(*args, **kwargs):
         factory_size = os.path.getsize(factory_bin_path)
         print(f"\nSuccessfully created factory image: {factory_bin_path}")
         print(f"Factory image size: {factory_size} bytes ({factory_size / 1024 / 1024:.2f} MB)")
-        print(f"Flash using beginning offset of {bootloader_addr}")
+        print(f"Use offset of 0x0000 when flashing")
     except subprocess.CalledProcessError as e:
         print(f"\nFailed to create factory image. Error: {e}")
     except FileNotFoundError:
