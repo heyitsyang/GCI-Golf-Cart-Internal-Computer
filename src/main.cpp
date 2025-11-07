@@ -19,6 +19,8 @@
 #define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
 #define ADC_FUEL_PIN 36     // 3.3v max
 #define ADC_BATTERY_PIN 39  // 3.3v max
+#define LED_BUILTIN 2
+
 
 #define ESPNOW_CHANNEL 1
 #define ESPNOW_MAX_PAYLOAD 240  // Max payload after wrapper overhead subtracted (ESP-NOW limit: 250 bytes, wrapper: 9 bytes, payload: 241 bytes)
@@ -112,8 +114,11 @@ void setup(void) {
   Serial.begin(9600);
   sensors.begin();
 
-  // Initialize button pin with pullup
+  //set pinModes
+  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  digitalWrite(LED_BUILTIN, LOW);  // turn off LED
 
   // Initialize WiFi to enable MAC address reading
   WiFi.mode(WIFI_STA);
