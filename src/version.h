@@ -1,8 +1,8 @@
-#define VERSION "0.1.0+6"
+#define VERSION "0.1.0+8"
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 1
 #define VERSION_PATCH 0
-#define VERSION_BUILD 6
+#define VERSION_BUILD 8
 #define VERSION_DATE "2025-11-07"
-#define VERSION_TIME "10:54"
-#define VERSION_FULL "0.1.0+6 2025-11-07 10:54"
+#define VERSION_TIME "21:29"
+#define VERSION_FULL "0.1.0+8 2025-11-07 21:29"

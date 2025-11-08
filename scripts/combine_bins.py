@@ -20,9 +20,11 @@ def create_factory_bin(*args, **kwargs):
     # Use env.subst() to expand PlatformIO variables
     proj_root = env.subst("$PROJECT_DIR")
     build_dir = env.subst("$BUILD_DIR")
+    build_env = env.subst("$PIOENV")
     # Use firmware.bin instead of $PROG_PATH which points to the .elf file
     firmware_path = os.path.join(build_dir, "firmware.bin")
-    factory_bin_path = os.path.join(build_dir, "firmware_factory.bin")
+    # Create environment-specific factory binary name (e.g., gcd_fw_combo.bin, calibration_fw_combo.bin)
+    factory_bin_path = os.path.join(build_dir, f"{build_env}_fw_combo.bin")
 
     # Debug output
     print(f"Build dir: {build_dir}")
