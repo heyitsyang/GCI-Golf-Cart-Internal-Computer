@@ -14,6 +14,7 @@
 #define BUTTON_HOLD_ERASE_SECS 5 // seconds to hold button to erase paired MAC
 
 #define GCD_PERIODIC_SEND_SECS 5  //update data to GCD
+#define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
 
 #define BUTTON_PIN 12       // GPIO34-39 do not have pullups
 #define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
@@ -63,6 +64,9 @@ unsigned long buttonPressStartTime = 0;
 bool buttonWasPressed = false;
 
 char thisDeviceMacStr[18];
+char pairedMacStr[18] = "";  // Store the paired MAC address string for display updates
+int consecutiveHeartbeatsMissed = HEARTBEAT_MISS_THRESHOLD;  // Start disconnected until first heartbeat
+unsigned long lastHeartbeatCheckTime = 0;
 
 // variables for outbound data
 int modeHeadLights = -99;
@@ -174,21 +178,20 @@ void setup(void) {
       peerInfo.encrypt = false;
 
       if (esp_now_add_peer(&peerInfo) == ESP_OK) {
-        char mac_str[18];
-        sprintf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x",
+        sprintf(pairedMacStr, "%02x:%02x:%02x:%02x:%02x:%02x",
                 savedMac[0], savedMac[1], savedMac[2],
                 savedMac[3], savedMac[4], savedMac[5]);
-        Serial.printf("Loaded saved peer: %s\n", mac_str);
+        Serial.printf("Loaded saved peer: %s\n", pairedMacStr);
 
-        // Display paired status
+        // Display paired status (starts RED until heartbeat received)
         tft.fillRect(0, 28, 320, 16, TFT_BLACK);
         tft.setCursor(1, 28);
         tft.setTextFont(2);
         tft.setTextColor(TFT_CYAN, TFT_BLACK);
         tft.print("PR");
-        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+        tft.setTextColor(TFT_RED, TFT_BLACK);  // Start RED until connection confirmed
         tft.setTextFont(4);
-        tft.print(mac_str);
+        tft.print(pairedMacStr);
 
         hasSavedPeer = true;
       }
@@ -279,6 +282,36 @@ void loop() {
   // Check if we have a paired device before attempting to send
   esp_now_peer_info_t peer;
   bool hasPeer = (esp_now_fetch_peer(true, &peer) == ESP_OK);
+
+  // Check for heartbeat timeout and update connection status display
+  static bool lastConnectionStatus = false;  // Track if we were connected last check
+  bool isConnected = (consecutiveHeartbeatsMissed < HEARTBEAT_MISS_THRESHOLD);
+
+  // Check if we need to increment missed heartbeat counter (every 10 seconds expected)
+  if (hasPeer && (millis() - lastHeartbeatCheckTime) >= 10000) {
+    consecutiveHeartbeatsMissed++;
+    lastHeartbeatCheckTime = millis();
+
+    if (consecutiveHeartbeatsMissed >= HEARTBEAT_MISS_THRESHOLD) {
+      Serial.printf("Connection lost - missed %d heartbeats\n", consecutiveHeartbeatsMissed);
+    }
+  }
+
+  // Update display if connection status changed
+  if (hasPeer && (isConnected != lastConnectionStatus) && strlen(pairedMacStr) > 0) {
+    tft.fillRect(0, 28, 320, 16, TFT_BLACK);
+    tft.setCursor(1, 28);
+    tft.setTextFont(2);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.print("PR");
+    tft.setTextColor(isConnected ? TFT_GREEN : TFT_RED, TFT_BLACK);
+    tft.setTextFont(4);
+    tft.print(pairedMacStr);
+
+    Serial.printf("Connection status changed: %s\n", isConnected ? "CONNECTED" : "DISCONNECTED");
+  }
+
+  lastConnectionStatus = isConnected;
 
   // Show waiting message if no peer (once per cycle)
   static bool lastHasPeer = false;
@@ -421,8 +454,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
       uint8_t newPeerMac[6];
       memcpy(newPeerMac, dataFromGcd.macAddr, 6);
 
-      char mac_str[18];
-      sprintf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x",
+      sprintf(pairedMacStr, "%02x:%02x:%02x:%02x:%02x:%02x",
               newPeerMac[0], newPeerMac[1], newPeerMac[2],
               newPeerMac[3], newPeerMac[4], newPeerMac[5]);
 
@@ -436,21 +468,21 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         newPeer.encrypt = false;
 
         if (esp_now_add_peer(&newPeer) == ESP_OK) {
-          Serial.printf("*** PAIRED with GCD (RAW MODE): %s ***\n", mac_str);
+          Serial.printf("*** PAIRED with GCD (RAW MODE): %s ***\n", pairedMacStr);
 
           // Save peer MAC to preferences
           preferences.putBytes("peer_mac", newPeerMac, 6);
           Serial.println("Saved peer MAC to EEPROM");
 
-          // Update display to show paired status
+          // Update display to show paired status (GREEN since we just received a message)
           tft.fillRect(0, 28, 320, 16, TFT_BLACK);
           tft.setCursor(1, 28); // Set cursor position
           tft.setTextFont(2); // Set font size small
           tft.setTextColor(TFT_CYAN, TFT_BLACK);
           tft.print("PR");
-          tft.setTextColor(TFT_WHITE, TFT_BLACK);
+          tft.setTextColor(TFT_GREEN, TFT_BLACK);  // GREEN since connection active
           tft.setTextFont(4); // Set font size medium
-          tft.print(mac_str);
+          tft.print(pairedMacStr);
 
 
           // Send ACK back to GCD in WRAPPED mode
@@ -484,6 +516,10 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
       Serial.println("ESP-NOW: Ignoring message from unknown peer");
       return;
     }
+
+    // Reset heartbeat counter - we received a message from GCD
+    consecutiveHeartbeatsMissed = 0;
+    lastHeartbeatCheckTime = millis();
 
     espnow_message_t* msg = (espnow_message_t*)incomingData;
 
