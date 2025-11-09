@@ -6,6 +6,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <Preferences.h>
+#include <esp_sleep.h>
 
 #include "prototypes.h"
 
@@ -16,11 +17,11 @@
 #define GCD_PERIODIC_SEND_SECS 5  //update data to GCD
 #define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
 
+#define SLEEP_PIN 5         // pull LOW to sleep
 #define BUTTON_PIN 12       // GPIO34-39 do not have pullups
 #define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
 #define ADC_FUEL_PIN 36     // 3.3v max
 #define ADC_BATTERY_PIN 39  // 3.3v max
-
 
 #define ESPNOW_CHANNEL 1
 #define ESPNOW_MAX_PAYLOAD 240  // Max payload after wrapper overhead subtracted (ESP-NOW limit: 250 bytes, wrapper: 9 bytes, payload: 241 bytes)
@@ -62,6 +63,7 @@ uint16_t next_msg_id = 0;
 
 unsigned long buttonPressStartTime = 0;
 bool buttonWasPressed = false;
+bool enteringSleep = false;  // Flag to prevent multiple sleep attempts
 
 char thisDeviceMacStr[18];
 char pairedMacStr[18] = "";  // Store the paired MAC address string for display updates
@@ -119,6 +121,9 @@ void setup(void) {
 
   //set pinModes
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(SLEEP_PIN, INPUT_PULLUP);
+  pinMode(TFT_BL, OUTPUT);
+  digitalWrite(TFT_BL, HIGH); // Turn on backlight initially
 
   // Initialize WiFi to enable MAC address reading
   WiFi.mode(WIFI_STA);
@@ -224,6 +229,15 @@ void loop() {
   static int raw_fuel, raw_batt;
   static bool sendData = false;
 
+  // Check if SLEEP_PIN is LOW (sleep requested)
+  if (!enteringSleep && digitalRead(SLEEP_PIN) == LOW) {
+    delay(50); // Debounce
+    if (digitalRead(SLEEP_PIN) == LOW) { // Confirm still LOW
+      enteringSleep = true;  // Prevent re-entry
+      enterDeepSleep();
+    }
+  }
+
   // Check for button state
   bool buttonPressed = (digitalRead(BUTTON_PIN) == LOW);
 
@@ -262,9 +276,12 @@ void loop() {
       // Turn screen back on
       digitalWrite(TFT_BL, HIGH);
       screenOn = true;
+
+      // Redraw display header
+      redrawDisplayHeader();
+
       sendData = true;
       screenStartTime = millis();
-      Serial.println("Backlight turned on by button press");
     }
 
     buttonWasPressed = false;
@@ -276,7 +293,6 @@ void loop() {
     // Turn off the backlight only
     digitalWrite(TFT_BL, LOW);  // Turn off backlight
     screenOn = false;
-    Serial.println("Backlight turned off after timeout");
   }
 
   // Check if we have a paired device before attempting to send
@@ -307,18 +323,9 @@ void loop() {
     tft.setTextColor(isConnected ? TFT_GREEN : TFT_RED, TFT_BLACK);
     tft.setTextFont(4);
     tft.print(pairedMacStr);
-
-    Serial.printf("Connection status changed: %s\n", isConnected ? "CONNECTED" : "DISCONNECTED");
   }
 
   lastConnectionStatus = isConnected;
-
-  // Show waiting message if no peer (once per cycle)
-  static bool lastHasPeer = false;
-  if (!hasPeer && lastHasPeer) {
-    Serial.println("Waiting for peer...");
-  }
-  lastHasPeer = hasPeer;
 
   // Read sensors and send data to GCD periodically (only if paired)
   if (hasPeer && ((millis() - lastGcdSendTime) >= (GCD_PERIODIC_SEND_SECS * 1000) || sendData) ){
@@ -352,12 +359,6 @@ void loop() {
     // Send header + actual telemetry payload
     esp_err_t result = esp_now_send(peer.peer_addr, (uint8_t *) &msg, ESPNOW_PACKET_SIZE(sizeof(dataToGcd)));
     lastGcdSendTime = millis();
-
-    if (result == ESP_OK) {
-      Serial.println("\nTelemetry sent successfully");
-    } else {
-      Serial.println("Error sending telemetry");
-    }
   }
 
   // Update display only when new data is available
@@ -415,6 +416,79 @@ void loop() {
 /*******************
  *    FUNCTIONS    *
  *******************/
+
+void redrawDisplayHeader() {
+  // Redraw MAC address line
+  tft.fillRect(0, 0, 320, 28, TFT_BLACK);
+  tft.setCursor(1, 2);
+  tft.setTextFont(2);
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.print("MAC");
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextFont(4);
+  tft.println(thisDeviceMacStr);
+
+  // Redraw paired status line if we have a peer
+  if (strlen(pairedMacStr) > 0) {
+    bool isConnected = (consecutiveHeartbeatsMissed < HEARTBEAT_MISS_THRESHOLD);
+    tft.fillRect(0, 28, 320, 16, TFT_BLACK);
+    tft.setCursor(1, 28);
+    tft.setTextFont(2);
+    tft.setTextColor(TFT_CYAN, TFT_BLACK);
+    tft.print("PR");
+    tft.setTextColor(isConnected ? TFT_GREEN : TFT_RED, TFT_BLACK);
+    tft.setTextFont(4);
+    tft.print(pairedMacStr);
+  }
+}
+
+void BeforeSleeping() {
+  // Clear display and show sleep message
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(15, 40);
+  tft.setTextFont(4);
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.println("ENTERING\nSLEEP MODE");
+
+  // Display message for 2 seconds
+  delay(2000);
+}
+
+void enterDeepSleep() {
+  // Execute pre-sleep tasks
+  BeforeSleeping();
+  // Clear and turn off display
+  tft.fillScreen(TFT_BLACK);
+  digitalWrite(TFT_BL, LOW);  // Turn off backlight
+
+  // Put display into sleep mode to release SPI bus
+  tft.writecommand(0x10); // Sleep mode command for ST7789
+
+  // Shutdown WiFi and ESP-NOW to save power
+  esp_now_deinit();
+  WiFi.disconnect(true);
+  esp_wifi_stop();
+
+  // Configure GPIO wake-up on SLEEP_PIN going HIGH
+  esp_err_t err = gpio_wakeup_enable((gpio_num_t)SLEEP_PIN, GPIO_INTR_HIGH_LEVEL);
+  if (err != ESP_OK) {
+    return; // Failed to configure wake-up
+  }
+
+  err = esp_sleep_enable_gpio_wakeup();
+  if (err != ESP_OK) {
+    return; // Failed to enable GPIO wakeup
+  }
+
+  // Small delay to ensure operations complete
+  delay(100);
+
+  // Enter light sleep (will wake when SLEEP_PIN goes HIGH)
+  esp_light_sleep_start();
+
+  // After waking from light sleep, reboot for clean state
+  ESP.restart();
+}
 
 void createMacAddressStr(char* MacStr){
   uint8_t baseMac[6];
