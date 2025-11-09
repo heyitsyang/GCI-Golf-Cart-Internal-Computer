@@ -9,6 +9,7 @@
 #include <esp_sleep.h>
 
 #include "prototypes.h"
+#include "display.h"
 
 #define SCREEN_TIMEOUT 60 // seconds
 #define PAIRED_MAC_MSG_TIMEOUT 5 // seconds
@@ -131,17 +132,12 @@ void setup(void) {
   tft.init(); // Initialize the display
   tft.setRotation(1); // Set the rotation to landscape mode (optional)
 
-  tft.fillScreen(TFT_BLACK); // Clear the screen to black
+  clearScreen(tft);
   tft.setTextColor(TFT_WHITE, TFT_BLACK); // Set text color to white
 
-  tft.setCursor(1, 2); // Set cursor position
-  tft.setTextFont(2); // Set font size
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.print("MAC");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  // Display this device's MAC address
   createMacAddressStr(thisDeviceMacStr);
-  tft.setTextFont(4); // Set font size
-  tft.println(thisDeviceMacStr);        // Display on TFT
+  displayMacLine(tft, thisDeviceMacStr);
   Serial.println(thisDeviceMacStr);     // Display on Serial
 
   // Init ESP-NOW
@@ -189,14 +185,7 @@ void setup(void) {
         Serial.printf("Loaded saved peer: %s\n", pairedMacStr);
 
         // Display paired status (starts RED until heartbeat received)
-        tft.fillRect(0, 28, 320, 16, TFT_BLACK);
-        tft.setCursor(1, 28);
-        tft.setTextFont(2);
-        tft.setTextColor(TFT_CYAN, TFT_BLACK);
-        tft.print("PR");
-        tft.setTextColor(TFT_RED, TFT_BLACK);  // Start RED until connection confirmed
-        tft.setTextFont(4);
-        tft.print(pairedMacStr);
+        displayPairingLine(tft, PAIRED_DISCONNECTED, pairedMacStr);
 
         hasSavedPeer = true;
       }
@@ -207,12 +196,7 @@ void setup(void) {
     Serial.println("No saved peer - waiting for pairing commands from GCD");
 
     // Display pairing status
-    tft.fillRect(0, 28, 320, 16, TFT_BLACK);
-    tft.setCursor(1, 28);
-    tft.setTextFont(2);
-    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-    tft.print("WAITING FOR PAIRING...");
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    displayPairingLine(tft, WAITING_FOR_PAIRING, "");
   }
   screenStartTime = millis();   // Record screen start time
 
@@ -315,14 +299,8 @@ void loop() {
 
   // Update display if connection status changed
   if (hasPeer && (isConnected != lastConnectionStatus) && strlen(pairedMacStr) > 0) {
-    tft.fillRect(0, 28, 320, 16, TFT_BLACK);
-    tft.setCursor(1, 28);
-    tft.setTextFont(2);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.print("PR");
-    tft.setTextColor(isConnected ? TFT_GREEN : TFT_RED, TFT_BLACK);
-    tft.setTextFont(4);
-    tft.print(pairedMacStr);
+    PairingStatus status = isConnected ? PAIRED_CONNECTED : PAIRED_DISCONNECTED;
+    displayPairingLine(tft, status, pairedMacStr);
   }
 
   lastConnectionStatus = isConnected;
@@ -363,45 +341,21 @@ void loop() {
 
   // Update display only when new data is available
   if (sendData) {
-    // Clear temperature value area (Y=54 to Y=72)
-    tft.fillRect(60, 54, 260, 18, TFT_BLACK);
+    // Display temperature
+    bool sensorConnected = (tempC_0 != DEVICE_DISCONNECTED_C);
+    displayTempLine(tft, tempF_0, sensorConnected);
 
-    tft.setCursor(1, 54); // Set cursor position
-    tft.setTextFont(2); // Set font size small
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.print("TEMP ");
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextFont(4); // Set font size medium
-
-    if (tempC_0 != DEVICE_DISCONNECTED_C) {
-      tft.print(tempF_0);
-      tft.println("°F");
+    if (sensorConnected) {
       Serial.print(tempF_0);
       Serial.println("°F");
     } else {
-      tft.println("No sensor");
       Serial.println("No sensor");
     }
 
-    // Clear fuel and battery value areas (Y=80 to Y=98)
-    tft.fillRect(60, 80, 260, 18, TFT_BLACK);
-
-    tft.setCursor(1, 80); // Set cursor position
-    tft.setTextFont(2); // Set font size small
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.print("FUEL ");
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextFont(4); // Set font size medium
-    tft.print(raw_fuel);
+    // Display fuel and battery
+    displayFuelBattLine(tft, raw_fuel, raw_batt);
     Serial.print("raw_fuel: ");
     Serial.println(raw_fuel);
-
-    tft.setTextFont(2); // Set font size small
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.print("        BATT ");
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextFont(4); // Set font size medium
-    tft.print(raw_batt);
     Serial.print("raw_batt: ");
     Serial.println(raw_batt);
 
@@ -419,33 +373,23 @@ void loop() {
 
 void redrawDisplayHeader() {
   // Redraw MAC address line
-  tft.fillRect(0, 0, 320, 28, TFT_BLACK);
-  tft.setCursor(1, 2);
-  tft.setTextFont(2);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.print("MAC");
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.setTextFont(4);
-  tft.println(thisDeviceMacStr);
+  displayMacLine(tft, thisDeviceMacStr);
 
   // Redraw paired status line if we have a peer
   if (strlen(pairedMacStr) > 0) {
     bool isConnected = (consecutiveHeartbeatsMissed < HEARTBEAT_MISS_THRESHOLD);
-    tft.fillRect(0, 28, 320, 16, TFT_BLACK);
-    tft.setCursor(1, 28);
-    tft.setTextFont(2);
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.print("PR");
-    tft.setTextColor(isConnected ? TFT_GREEN : TFT_RED, TFT_BLACK);
-    tft.setTextFont(4);
-    tft.print(pairedMacStr);
+    PairingStatus status = isConnected ? PAIRED_CONNECTED : PAIRED_DISCONNECTED;
+    displayPairingLine(tft, status, pairedMacStr);
   }
 }
 
 void BeforeSleeping() {
+  // Turn on backlight to ensure message is visible
+  digitalWrite(TFT_BL, HIGH);
+
   // Clear display and show sleep message
   tft.fillScreen(TFT_BLACK);
-  tft.setCursor(15, 40);
+  tft.setCursor(1, 40);
   tft.setTextFont(4);
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
   tft.println("ENTERING\nSLEEP MODE");
@@ -549,14 +493,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
           Serial.println("Saved peer MAC to EEPROM");
 
           // Update display to show paired status (GREEN since we just received a message)
-          tft.fillRect(0, 28, 320, 16, TFT_BLACK);
-          tft.setCursor(1, 28); // Set cursor position
-          tft.setTextFont(2); // Set font size small
-          tft.setTextColor(TFT_CYAN, TFT_BLACK);
-          tft.print("PR");
-          tft.setTextColor(TFT_GREEN, TFT_BLACK);  // GREEN since connection active
-          tft.setTextFont(4); // Set font size medium
-          tft.print(pairedMacStr);
+          displayPairingLine(tft, PAIRED_CONNECTED, pairedMacStr);
 
 
           // Send ACK back to GCD in WRAPPED mode
@@ -636,15 +573,8 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
                              newPeerMac[0], newPeerMac[1], newPeerMac[2],
                              newPeerMac[3], newPeerMac[4], newPeerMac[5]);
 
-                // Update display to show paired status
-                tft.fillRect(0, 28, 320, 16, TFT_BLACK);
-                tft.setCursor(1, 28);
-                tft.setTextFont(2);
-                tft.setTextColor(TFT_CYAN, TFT_BLACK);
-                tft.printf("PR");
-                tft.setTextColor(TFT_WHITE, TFT_BLACK);
-                tft.setTextFont(4);
-                printf("%s", mac_str);
+                // Update display to show paired status (connected since we just received message)
+                displayPairingLine(tft, PAIRED_CONNECTED, mac_str);
               } else {
                 Serial.println("Failed to add peer");
               }
