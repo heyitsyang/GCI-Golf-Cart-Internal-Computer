@@ -51,12 +51,12 @@ void setValueStyle(TFT_eSPI &tft);     // Large white text for values
 void displayMacLine(TFT_eSPI &tft, const char* macAddress);
 void displayPairingLine(TFT_eSPI &tft, PairingStatus status, const char* pairedMac);
 void displayTempLine(TFT_eSPI &tft, float tempF, bool sensorConnected);
-void displayFuelBattLine(TFT_eSPI &tft, int fuelRaw, int battRaw);
+void displayFuelBattLine(TFT_eSPI &tft, float fuelVolts, float battVolts);
 
 // Full screen operations
 void clearScreen(TFT_eSPI &tft);
 void redrawAllLines(TFT_eSPI &tft, const char* thisMac, PairingStatus status,
                     const char* pairedMac, float tempF, bool sensorConnected,
-                    int fuelRaw, int battRaw);
+                    float fuelVolts, float battVolts);
 
 #endif // DISPLAY_H

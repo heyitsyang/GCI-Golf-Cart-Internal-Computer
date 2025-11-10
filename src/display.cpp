@@ -81,7 +81,7 @@ void displayTempLine(TFT_eSPI &tft, float tempF, bool sensorConnected) {
     }
 }
 
-void displayFuelBattLine(TFT_eSPI &tft, int fuelRaw, int battRaw) {
+void displayFuelBattLine(TFT_eSPI &tft, float fuelVolts, float battVolts) {
     // Clear the value area
     tft.fillRect(60, FUEL_LINE_Y, 260, 18, TFT_BLACK);
 
@@ -90,13 +90,13 @@ void displayFuelBattLine(TFT_eSPI &tft, int fuelRaw, int battRaw) {
     setLabelStyle(tft);
     tft.print("FUEL ");
     setValueStyle(tft);
-    tft.print(fuelRaw);
+    tft.print(fuelVolts, 3);  // 3 decimal places
 
     // Draw BATT
     setLabelStyle(tft);
-    tft.print("        BATT ");
+    tft.print("     BATT ");
     setValueStyle(tft);
-    tft.print(battRaw);
+    tft.print(battVolts, 3);  // 3 decimal places
 }
 
 // ============================================================================
@@ -109,10 +109,10 @@ void clearScreen(TFT_eSPI &tft) {
 
 void redrawAllLines(TFT_eSPI &tft, const char* thisMac, PairingStatus status,
                     const char* pairedMac, float tempF, bool sensorConnected,
-                    int fuelRaw, int battRaw) {
+                    float fuelVolts, float battVolts) {
     // Redraw each line of the display
     displayMacLine(tft, thisMac);
     displayPairingLine(tft, status, pairedMac);
     displayTempLine(tft, tempF, sensorConnected);
-    displayFuelBattLine(tft, fuelRaw, battRaw);
+    displayFuelBattLine(tft, fuelVolts, battVolts);
 }

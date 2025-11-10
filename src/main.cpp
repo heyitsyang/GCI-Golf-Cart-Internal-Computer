@@ -210,7 +210,9 @@ void setup(void) {
 void loop() {
 
   static float tempC_0, tempF_0;
-  static int raw_fuel, raw_batt;
+  static int rawFuelADC, rawBattADC;
+  static float voltsFuelADC, voltsBattADC;
+  static int percentFuel;
   static bool sendData = false;
 
   // Check if SLEEP_PIN is LOW (sleep requested)
@@ -314,15 +316,27 @@ void loop() {
     tempF_0 = tempC_0 * 9.0 / 5.0 + 32.0;
 
     // Read ADC values
-    raw_fuel = analogRead(ADC_FUEL_PIN);
-    raw_batt = analogRead(ADC_BATTERY_PIN);
+    rawFuelADC = analogRead(ADC_FUEL_PIN);
+    rawBattADC = analogRead(ADC_BATTERY_PIN);
+
+    // Convert ADC values to volts (0-4095 -> 0-3.3V)
+    voltsFuelADC = (rawFuelADC / 4095.0) * 3.3;
+    voltsBattADC = (rawBattADC / 4095.0) * 3.3;
+
+    // Calculate fuel percentage from voltage
+    float fuelCalc = (-90.21 * voltsFuelADC) + 105.55;
+    percentFuel = (int)fuelCalc;
+
+    // Limit percentFuel to 0-100 range
+    if (percentFuel > 100) percentFuel = 100;
+    if (percentFuel < 0) percentFuel = 0;
 
     // stuff the dataToGcd structure for transmission
     dataToGcd.modeLights = modeHeadLights;
     dataToGcd.outdoorLum = outdoorLuminosity;
     dataToGcd.airTemp = tempF_0;
-    dataToGcd.battVolts = raw_batt;
-    dataToGcd.fuel = raw_fuel;
+    dataToGcd.battVolts = voltsBattADC;
+    dataToGcd.fuel = percentFuel;
 
     sendData = true;
 
@@ -353,11 +367,11 @@ void loop() {
     }
 
     // Display fuel and battery
-    displayFuelBattLine(tft, raw_fuel, raw_batt);
-    Serial.print("raw_fuel: ");
-    Serial.println(raw_fuel);
-    Serial.print("raw_batt: ");
-    Serial.println(raw_batt);
+    displayFuelBattLine(tft, voltsFuelADC, voltsBattADC);
+    Serial.print("percentFuel: ");
+    Serial.println(percentFuel);
+    Serial.print("voltsBattADC: ");
+    Serial.println(voltsBattADC, 3);  // 3 decimal places
 
     sendData = false; // Reset flag after display update
   }
