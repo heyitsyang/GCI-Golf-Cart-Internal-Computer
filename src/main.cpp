@@ -27,6 +27,8 @@
 #define ESPNOW_CHANNEL 1
 #define ESPNOW_MAX_PAYLOAD 240  // Max payload after wrapper overhead subtracted (ESP-NOW limit: 250 bytes, wrapper: 9 bytes, payload: 241 bytes)
 
+#define DISPLAY_ORIENTATION 1       // 0 = Normal, 1 = Flipped (180 degrees)
+
 // ESP-NOW message types (must match GCD)
 typedef enum {
     ESPNOW_MSG_TEXT = 0,
@@ -130,7 +132,7 @@ void setup(void) {
   WiFi.mode(WIFI_STA);
 
   tft.init(); // Initialize the display
-  tft.setRotation(1); // Set the rotation to landscape mode (optional)
+  tft.setRotation(DISPLAY_ORIENTATION == 0 ? 1 : 3); // 1 = landscape normal, 3 = landscape flipped
 
   clearScreen(tft);
   tft.setTextColor(TFT_WHITE, TFT_BLACK); // Set text color to white
