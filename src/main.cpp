@@ -361,19 +361,19 @@ void loop() {
     bool sensorConnected = (tempC_0 != DEVICE_DISCONNECTED_C);
     displayTempLine(tft, tempF_0, sensorConnected);
 
-    if (sensorConnected) {
-      Serial.print(tempF_0);
-      Serial.println("°F");
-    } else {
-      Serial.println("No sensor");
-    }
-
     // Display fuel and battery
     displayFuelBattLine(tft, voltsFuelADC, voltsBattADC);
-    Serial.print("percentFuel: ");
-    Serial.println(percentFuel);
-    Serial.print("voltsBattADC: ");
-    Serial.println(voltsBattADC, 3);  // 3 decimal places
+
+    // Print compressed telemetry format to serial
+    char gcdMacStr[18];
+    if (hasPeer) {
+      sprintf(gcdMacStr, "%02x:%02x:%02x:%02x:%02x:%02x",
+              peer.peer_addr[0], peer.peer_addr[1], peer.peer_addr[2],
+              peer.peer_addr[3], peer.peer_addr[4], peer.peer_addr[5]);
+    }
+    Serial.printf("Telemetry to %s : Lights=%d, Lum=%d, Temp=%.1f, Batt=%.2f, Fuel=%.1f\n",
+                  hasPeer ? gcdMacStr : "No Peer",
+                  modeHeadLights, outdoorLuminosity, tempF_0, voltsBattADC, (float)percentFuel);
 
     sendData = false; // Reset flag after display update
   }
@@ -467,8 +467,9 @@ void createMacAddressStr(char* MacStr){
 
 // Callback when data is sent
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("Last Packet Send Status:    ");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  if (status != ESP_NOW_SEND_SUCCESS) {
+    Serial.println("Send Status: Fail");
+  }
   if (status ==0){
     tx_success = "Delivery Success :)";
   }
@@ -621,9 +622,19 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         break;
 
       case ESPNOW_MSG_HEARTBEAT:
-        // Only show if from a known peer
+        // Respond to heartbeat from known peer (closed-loop keepalive)
         if (esp_now_is_peer_exist(mac)) {
-          Serial.printf("Heartbeat from %s\n", mac_str);
+          Serial.printf("Heartbeat from %s - sending response\n", mac_str);
+
+          // Send heartbeat response back to GCD
+          espnow_message_t response;
+          response.type = ESPNOW_MSG_HEARTBEAT;
+          response.timestamp = millis();
+          response.msg_id = next_msg_id++;
+          response.data_len = 4;
+          memcpy(response.data, &response.timestamp, 4);
+
+          esp_now_send(mac, (uint8_t*)&response, ESPNOW_PACKET_SIZE(4));
         }
         break;
 
