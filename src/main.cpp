@@ -63,7 +63,8 @@ unsigned long screenStartTime = 0;
 bool screenOn = true;
 unsigned long lastGcdSendTime = 0;
 uint16_t next_msg_id = 0;
-bool sendInitialTelemetry = false;  // Flag to send telemetry on new connection
+bool refreshTelemetry = false;      // Flag to refresh telemetry after connection/reconnection
+bool heartbeatMissed = false;       // Flag set on first missed heartbeat
 
 unsigned long buttonPressStartTime = 0;
 bool buttonWasPressed = false;
@@ -303,6 +304,12 @@ void loop() {
     consecutiveHeartbeatsMissed++;
     lastHeartbeatCheckTime = millis();
 
+    // Set flag on first missed heartbeat for telemetry re-send
+    if (consecutiveHeartbeatsMissed == 1) {
+      heartbeatMissed = true;
+      Serial.println("Heartbeat missed - telemetry will be sent when connection re-established");
+    }
+
     if (consecutiveHeartbeatsMissed >= HEARTBEAT_MISS_THRESHOLD) {
       Serial.printf("Connection lost - missed %d heartbeats\n", consecutiveHeartbeatsMissed);
     }
@@ -340,13 +347,15 @@ void loop() {
     if (percentFuel > 100) percentFuel = 100;
     if (percentFuel < 0) percentFuel = 0;
 
-    // Check if telemetry data has changed significantly, screen was just turned on, or new connection established
-    bool dataChanged = sendData || sendInitialTelemetry || hasSignificantTelemetryChange(voltsBattADC, tempF_0, (float)percentFuel, modeHeadLights);
+    // Check if telemetry should be sent
+    // Send when: data changed, screen turned on, initial connection, or after missed heartbeat when reconnected
+    bool dataChanged = sendData || refreshTelemetry || hasSignificantTelemetryChange(voltsBattADC, tempF_0, (float)percentFuel, modeHeadLights);
+    bool resendAfterMissedHeartbeat = heartbeatMissed && (consecutiveHeartbeatsMissed == 0);
 
     // Check if minimum interval has elapsed since last send
     bool intervalElapsed = (millis() - lastGcdSendTime) >= TELEMETRY_MIN_INTERVAL_MS;
 
-    if (dataChanged && intervalElapsed) {
+    if ((dataChanged || resendAfterMissedHeartbeat) && intervalElapsed) {
 
       // Update previous values
       prevBattVoltage = voltsBattADC;
@@ -375,9 +384,14 @@ void loop() {
       esp_err_t result = esp_now_send(peer.peer_addr, (uint8_t *) &msg, ESPNOW_PACKET_SIZE(sizeof(dataToGcd)));
       lastGcdSendTime = millis();
 
-      Serial.println("Telemetry sent due to significant change");
-      sendInitialTelemetry = false;  // Clear the initial telemetry flag
-    } else if (dataChanged && !intervalElapsed) {
+      if (resendAfterMissedHeartbeat) {
+        Serial.println("Telemetry sent after connection re-established");
+        heartbeatMissed = false;  // Clear the missed heartbeat flag
+      } else {
+        Serial.println("Telemetry sent due to significant change");
+      }
+      refreshTelemetry = false;  // Clear the refresh telemetry flag
+    } else if ((dataChanged || resendAfterMissedHeartbeat) && !intervalElapsed) {
       Serial.printf("Telemetry change detected but throttled (%.1fs until next send allowed)\n",
                     (TELEMETRY_MIN_INTERVAL_MS - (millis() - lastGcdSendTime)) / 1000.0);
     }
@@ -582,9 +596,6 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
 
           // Update display to show paired status (GREEN since we just received a message)
           displayPairingLine(tft, PAIRED_CONNECTED, pairedMacStr);
-
-          // Set flag to send initial telemetry on next loop
-          sendInitialTelemetry = true;
 
           // Send ACK back to GCD in WRAPPED mode
           espnow_message_t ackMsg;
