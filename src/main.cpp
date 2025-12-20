@@ -15,7 +15,6 @@
 #define PAIRED_MAC_MSG_TIMEOUT 5 // seconds
 #define BUTTON_HOLD_ERASE_SECS 5 // seconds to hold button to erase paired MAC
 
-#define GCD_PERIODIC_SEND_SECS 5  //update data to GCD
 #define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
 
 #define SLEEP_PIN 5         // pull LOW to sleep
@@ -63,6 +62,7 @@ unsigned long screenStartTime = 0;
 bool screenOn = true;
 unsigned long lastGcdSendTime = 0;
 uint16_t next_msg_id = 0;
+bool sendInitialTelemetry = false;  // Flag to send telemetry on new connection
 
 unsigned long buttonPressStartTime = 0;
 bool buttonWasPressed = false;
@@ -79,6 +79,12 @@ int outdoorLuminosity = -99;
 float airTemperature = -99;
 float battVoltage = -99;
 float fuelLevel = -99;
+
+// Previous telemetry values for change detection
+int prevModeHeadLights = -99;
+float prevAirTemperature = -999;
+float prevBattVoltage = -99;
+float prevFuelLevel = -99;
 
 // Golf cart command codes (must match GCD)
 typedef enum {
@@ -309,8 +315,8 @@ void loop() {
 
   lastConnectionStatus = isConnected;
 
-  // Read sensors and send data to GCD periodically (only if paired)
-  if (hasPeer && ((millis() - lastGcdSendTime) >= (GCD_PERIODIC_SEND_SECS * 1000) || sendData) ){
+  // Read sensors continuously (only if paired)
+  if (hasPeer) {
 
     // Read temperature sensor
     sensors.requestTemperatures();
@@ -333,26 +339,39 @@ void loop() {
     if (percentFuel > 100) percentFuel = 100;
     if (percentFuel < 0) percentFuel = 0;
 
-    // stuff the dataToGcd structure for transmission
-    dataToGcd.modeLights = modeHeadLights;
-    dataToGcd.outdoorLum = outdoorLuminosity;
-    dataToGcd.airTemp = tempF_0;
-    dataToGcd.battVolts = voltsBattADC;
-    dataToGcd.fuel = percentFuel;
+    // Check if telemetry data has changed significantly, screen was just turned on, or new connection established
+    if (sendData || sendInitialTelemetry || hasSignificantTelemetryChange(voltsBattADC, tempF_0, (float)percentFuel, modeHeadLights)) {
 
-    sendData = true;
+      // Update previous values
+      prevBattVoltage = voltsBattADC;
+      prevAirTemperature = tempF_0;
+      prevFuelLevel = (float)percentFuel;
+      prevModeHeadLights = modeHeadLights;
 
-    // Wrap telemetry data in espnow_message_t
-    espnow_message_t msg;
-    msg.type = ESPNOW_MSG_TELEMETRY;
-    msg.timestamp = millis();
-    msg.msg_id = next_msg_id++;
-    msg.data_len = sizeof(dataToGcd);
-    memcpy(msg.data, &dataToGcd, sizeof(dataToGcd));
+      // stuff the dataToGcd structure for transmission
+      dataToGcd.modeLights = modeHeadLights;
+      dataToGcd.outdoorLum = outdoorLuminosity;
+      dataToGcd.airTemp = tempF_0;
+      dataToGcd.battVolts = voltsBattADC;
+      dataToGcd.fuel = percentFuel;
 
-    // Send header + actual telemetry payload
-    esp_err_t result = esp_now_send(peer.peer_addr, (uint8_t *) &msg, ESPNOW_PACKET_SIZE(sizeof(dataToGcd)));
-    lastGcdSendTime = millis();
+      sendData = true;
+
+      // Wrap telemetry data in espnow_message_t
+      espnow_message_t msg;
+      msg.type = ESPNOW_MSG_TELEMETRY;
+      msg.timestamp = millis();
+      msg.msg_id = next_msg_id++;
+      msg.data_len = sizeof(dataToGcd);
+      memcpy(msg.data, &dataToGcd, sizeof(dataToGcd));
+
+      // Send header + actual telemetry payload
+      esp_err_t result = esp_now_send(peer.peer_addr, (uint8_t *) &msg, ESPNOW_PACKET_SIZE(sizeof(dataToGcd)));
+      lastGcdSendTime = millis();
+
+      Serial.println("Telemetry sent due to significant change");
+      sendInitialTelemetry = false;  // Clear the initial telemetry flag
+    }
   }
 
   // Update display only when new data is available
@@ -386,6 +405,40 @@ void loop() {
 /*******************
  *    FUNCTIONS    *
  *******************/
+
+// Check if telemetry data has changed significantly
+bool hasSignificantTelemetryChange(float battVolts, float airTemp, float fuel, int modeLights) {
+  bool changed = false;
+
+  // Check battery voltage change (>0.1V)
+  if (fabs(battVolts - prevBattVoltage) > 0.1) {
+    Serial.printf("Battery voltage changed: %.2fV -> %.2fV (delta: %.2fV)\n",
+                  prevBattVoltage, battVolts, fabs(battVolts - prevBattVoltage));
+    changed = true;
+  }
+
+  // Check temperature change (>1°F)
+  if (fabs(airTemp - prevAirTemperature) > 1.0) {
+    Serial.printf("Temperature changed: %.1fF -> %.1fF (delta: %.1fF)\n",
+                  prevAirTemperature, airTemp, fabs(airTemp - prevAirTemperature));
+    changed = true;
+  }
+
+  // Check fuel level change (>1%)
+  if (fabs(fuel - prevFuelLevel) > 1.0) {
+    Serial.printf("Fuel level changed: %.1f%% -> %.1f%% (delta: %.1f%%)\n",
+                  prevFuelLevel, fuel, fabs(fuel - prevFuelLevel));
+    changed = true;
+  }
+
+  // Check headlight mode change (any change)
+  if (modeLights != prevModeHeadLights) {
+    Serial.printf("Headlight mode changed: %d -> %d\n", prevModeHeadLights, modeLights);
+    changed = true;
+  }
+
+  return changed;
+}
 
 void redrawDisplayHeader() {
   // Redraw MAC address line
@@ -485,6 +538,15 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     memcpy(&dataFromGcd, incomingData, sizeof(dataFromGcd));
 
     if (dataFromGcd.cmdNumber == GCI_CMD_ADD_PEER) {
+      // Check if we already have a peer (only allow one peer at a time)
+      esp_now_peer_info_t existingPeer;
+      bool hasPeer = (esp_now_fetch_peer(true, &existingPeer) == ESP_OK);
+
+      if (hasPeer) {
+        Serial.println("Pairing rejected - already paired with another device");
+        return;
+      }
+
       // Extract MAC address from command payload
       uint8_t newPeerMac[6];
       memcpy(newPeerMac, dataFromGcd.macAddr, 6);
@@ -512,6 +574,8 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
           // Update display to show paired status (GREEN since we just received a message)
           displayPairingLine(tft, PAIRED_CONNECTED, pairedMacStr);
 
+          // Set flag to send initial telemetry on next loop
+          sendInitialTelemetry = true;
 
           // Send ACK back to GCD in WRAPPED mode
           espnow_message_t ackMsg;
@@ -573,6 +637,15 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
         // Process commands
         switch (dataFromGcd.cmdNumber) {
           case GCI_CMD_ADD_PEER: {
+            // Check if we already have a peer (only allow one peer at a time)
+            esp_now_peer_info_t existingPeer;
+            bool alreadyHasPeer = (esp_now_fetch_peer(true, &existingPeer) == ESP_OK);
+
+            if (alreadyHasPeer) {
+              Serial.println("Pairing rejected - already paired with another device");
+              break;
+            }
+
             // Extract MAC address from command payload
             uint8_t newPeerMac[6];
             memcpy(newPeerMac, dataFromGcd.macAddr, 6);

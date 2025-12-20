@@ -3,6 +3,9 @@
  * PROTOTYPES
  */
 
+// Telemetry functions
+bool hasSignificantTelemetryChange(float battVolts, float airTemp, float fuel, int modeLights);
+
 // Display functions are now in display.h
 void redrawDisplayHeader();
 
