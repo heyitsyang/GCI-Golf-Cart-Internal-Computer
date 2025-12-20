@@ -15,6 +15,7 @@
 #define PAIRED_MAC_MSG_TIMEOUT 5 // seconds
 #define BUTTON_HOLD_ERASE_SECS 5 // seconds to hold button to erase paired MAC
 
+#define TELEMETRY_MIN_INTERVAL_MS 5000  // Minimum 5 seconds between telemetry packets
 #define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
 
 #define SLEEP_PIN 5         // pull LOW to sleep
@@ -340,7 +341,12 @@ void loop() {
     if (percentFuel < 0) percentFuel = 0;
 
     // Check if telemetry data has changed significantly, screen was just turned on, or new connection established
-    if (sendData || sendInitialTelemetry || hasSignificantTelemetryChange(voltsBattADC, tempF_0, (float)percentFuel, modeHeadLights)) {
+    bool dataChanged = sendData || sendInitialTelemetry || hasSignificantTelemetryChange(voltsBattADC, tempF_0, (float)percentFuel, modeHeadLights);
+
+    // Check if minimum interval has elapsed since last send
+    bool intervalElapsed = (millis() - lastGcdSendTime) >= TELEMETRY_MIN_INTERVAL_MS;
+
+    if (dataChanged && intervalElapsed) {
 
       // Update previous values
       prevBattVoltage = voltsBattADC;
@@ -371,6 +377,9 @@ void loop() {
 
       Serial.println("Telemetry sent due to significant change");
       sendInitialTelemetry = false;  // Clear the initial telemetry flag
+    } else if (dataChanged && !intervalElapsed) {
+      Serial.printf("Telemetry change detected but throttled (%.1fs until next send allowed)\n",
+                    (TELEMETRY_MIN_INTERVAL_MS - (millis() - lastGcdSendTime)) / 1000.0);
     }
   }
 
