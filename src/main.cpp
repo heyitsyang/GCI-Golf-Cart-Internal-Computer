@@ -240,7 +240,7 @@ void loop() {
     delay(50); // Debounce
     if (digitalRead(SLEEP_PIN) == LOW) { // Confirm still LOW
       enteringSleep = true;  // Prevent re-entry
-      enterDeepSleep();
+      enterLightSleep();
     }
   }
 
@@ -500,7 +500,7 @@ void BeforeSleeping() {
   delay(2000);
 }
 
-void enterDeepSleep() {
+void enterLightSleep() {
   // Execute pre-sleep tasks
   BeforeSleeping();
   // Clear and turn off display
