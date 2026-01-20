@@ -1,3 +1,5 @@
+
+#include <Arduino.h>
 #include <SPI.h>
 #include <TFT_eSPI.h> // Include the TFT_eSPI library
 #include <WiFi.h>
@@ -23,6 +25,10 @@
 #define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
 #define ADC_FUEL_PIN 36     // 3.3v max
 #define ADC_BATTERY_PIN 39  // 3.3v max
+#define RELAY_1_PIN 14
+#define RELAY_2_PIN 27
+#define RELAY_3_PIN 26
+#define RELAY_4_PIN 25
 
 #define ESPNOW_CHANNEL 1
 #define ESPNOW_MAX_PAYLOAD 240  // Max payload after wrapper overhead subtracted (ESP-NOW limit: 250 bytes, wrapper: 9 bytes, payload: 241 bytes)
@@ -43,7 +49,7 @@ typedef enum {
 typedef struct __attribute__((packed)) {
     uint8_t type;
     uint32_t timestamp;
-    uint16_t msg_id;
+    uint16_t msg_seq_num;
     uint16_t data_len;
     uint8_t data[ESPNOW_MAX_PAYLOAD];
 } espnow_message_t;
@@ -62,7 +68,7 @@ Preferences preferences;
 unsigned long screenStartTime = 0;
 bool screenOn = true;
 unsigned long lastGcdSendTime = 0;
-uint16_t next_msg_id = 0;
+uint16_t next_msg_seq_num = 0;
 bool refreshTelemetry = false;      // Flag to refresh telemetry after connection/reconnection
 bool heartbeatMissed = false;       // Flag set on first missed heartbeat
 
@@ -131,6 +137,10 @@ void setup(void) {
   sensors.begin();
 
   //set pinModes
+  pinMode(RELAY_1_PIN, OUTPUT);
+  pinMode(RELAY_2_PIN, OUTPUT);
+  pinMode(RELAY_3_PIN, OUTPUT);
+  pinMode(RELAY_4_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(SLEEP_PIN, INPUT_PULLUP);
   pinMode(TFT_BL, OUTPUT);
@@ -376,7 +386,7 @@ void loop() {
       espnow_message_t msg;
       msg.type = ESPNOW_MSG_TELEMETRY;
       msg.timestamp = millis();
-      msg.msg_id = next_msg_id++;
+      msg.msg_seq_num = next_msg_seq_num++;
       msg.data_len = sizeof(dataToGcd);
       memcpy(msg.data, &dataToGcd, sizeof(dataToGcd));
 
@@ -601,7 +611,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
           espnow_message_t ackMsg;
           ackMsg.type = ESPNOW_MSG_ACK;
           ackMsg.timestamp = millis();
-          ackMsg.msg_id = next_msg_id++;
+          ackMsg.msg_seq_num = next_msg_seq_num++;
           ackMsg.data_len = 0;
 
           Serial.printf("Sending ACK (%d bytes) to GCD...\n", ESPNOW_PACKET_SIZE(0));
@@ -723,7 +733,7 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
           espnow_message_t response;
           response.type = ESPNOW_MSG_HEARTBEAT;
           response.timestamp = millis();
-          response.msg_id = next_msg_id++;
+          response.msg_seq_num = next_msg_seq_num++;
           response.data_len = 4;
           memcpy(response.data, &response.timestamp, 4);
 
