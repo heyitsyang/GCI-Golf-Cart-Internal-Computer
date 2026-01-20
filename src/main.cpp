@@ -42,7 +42,9 @@ typedef enum {
     ESPNOW_MSG_TELEMETRY = 2,
     ESPNOW_MSG_COMMAND = 3,
     ESPNOW_MSG_ACK = 4,
-    ESPNOW_MSG_HEARTBEAT = 5
+    ESPNOW_MSG_HEARTBEAT = 5,
+    ESPNOW_MSG_IS_HOME = 6,
+    ESPNOW_MSG_IS_DAYTIME = 7
 } espnow_msg_type_t;
 
 // ESP-NOW message structure (must match GCD)
@@ -93,6 +95,10 @@ int prevModeHeadLights = -99;
 float prevAirTemperature = -999;
 float prevBattVoltage = -99;
 float prevFuelLevel = -99;
+
+// Status variables received from GCD
+bool is_home = false;      // True when GCD is within home geo-fence
+bool is_daylight = true;   // True during daytime (between sunrise/sunset)
 
 // Golf cart command codes (must match GCD)
 typedef enum {
@@ -738,6 +744,20 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
           memcpy(response.data, &response.timestamp, 4);
 
           esp_now_send(mac, (uint8_t*)&response, ESPNOW_PACKET_SIZE(4));
+        }
+        break;
+
+      case ESPNOW_MSG_IS_HOME:
+        if (msg->data_len >= 1) {
+          is_home = (msg->data[0] != 0);
+          Serial.printf("Received is_home status: %s\n", is_home ? "HOME" : "AWAY");
+        }
+        break;
+
+      case ESPNOW_MSG_IS_DAYTIME:
+        if (msg->data_len >= 1) {
+          is_daylight = (msg->data[0] != 0);
+          Serial.printf("Received is_daylight status: %s\n", is_daylight ? "DAYTIME" : "NIGHTTIME");
         }
         break;
 
