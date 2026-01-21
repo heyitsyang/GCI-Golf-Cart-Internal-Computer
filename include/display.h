@@ -59,4 +59,7 @@ void redrawAllLines(TFT_eSPI &tft, const char* thisMac, PairingStatus status,
                     const char* pairedMac, float tempF, bool sensorConnected,
                     float fuelVolts, float battVolts);
 
+// Splash screen - displays "GCI" and version for 2 seconds
+void displaySplashScreen(TFT_eSPI &tft, const char* version);
+
 #endif // DISPLAY_H

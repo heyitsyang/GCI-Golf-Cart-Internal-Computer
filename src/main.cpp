@@ -12,6 +12,7 @@
 
 #include "prototypes.h"
 #include "display.h"
+#include "version.h"
 
 #define SCREEN_TIMEOUT 60 // seconds
 #define PAIRED_MAC_MSG_TIMEOUT 5 // seconds
@@ -77,6 +78,13 @@ bool heartbeatMissed = false;       // Flag set on first missed heartbeat
 unsigned long buttonPressStartTime = 0;
 bool buttonWasPressed = false;
 bool enteringSleep = false;  // Flag to prevent multiple sleep attempts
+
+// SLEEP_PIN debounce configuration
+#define SLEEP_PIN_DEBOUNCE_MS 400
+int last_sleep_pin_state = HIGH;
+int current_sleep_raw_state = HIGH;
+unsigned long sleep_state_change_time_ms = 0;
+bool debounced_sleep_state = false;
 
 char thisDeviceMacStr[18];
 char pairedMacStr[18] = "";  // Store the paired MAC address string for display updates
@@ -158,7 +166,9 @@ void setup(void) {
   tft.init(); // Initialize the display
   tft.setRotation(DISPLAY_ORIENTATION == 0 ? 1 : 3); // 1 = landscape normal, 3 = landscape flipped
 
-  clearScreen(tft);
+  // Show splash screen for 2 seconds
+  displaySplashScreen(tft, VERSION);
+
   tft.setTextColor(TFT_WHITE, TFT_BLACK); // Set text color to white
 
   // Display this device's MAC address
@@ -241,13 +251,26 @@ void loop() {
   static int percentFuel;
   static bool sendData = false;
 
-  // Check if SLEEP_PIN is LOW (sleep requested)
-  if (!enteringSleep && digitalRead(SLEEP_PIN) == LOW) {
-    delay(50); // Debounce
-    if (digitalRead(SLEEP_PIN) == LOW) { // Confirm still LOW
-      enteringSleep = true;  // Prevent re-entry
-      enterLightSleep();
+  // Check SLEEP_PIN with debounce
+  // Requires pin to be stable for SLEEP_PIN_DEBOUNCE_MS before acting
+  int sleep_raw_reading = digitalRead(SLEEP_PIN);
+  unsigned long now = millis();
+
+  if (sleep_raw_reading != current_sleep_raw_state) {
+    current_sleep_raw_state = sleep_raw_reading;
+    sleep_state_change_time_ms = now;
+  }
+
+  if (current_sleep_raw_state != last_sleep_pin_state) {
+    if ((now - sleep_state_change_time_ms) >= SLEEP_PIN_DEBOUNCE_MS) {
+      last_sleep_pin_state = current_sleep_raw_state;
+      debounced_sleep_state = (current_sleep_raw_state == LOW);
     }
+  }
+
+  if (!enteringSleep && debounced_sleep_state) {
+    enteringSleep = true;
+    enterLightSleep();
   }
 
   // Check for button state
@@ -288,6 +311,9 @@ void loop() {
       // Turn screen back on
       digitalWrite(TFT_BL, HIGH);
       screenOn = true;
+
+      // Show splash screen
+      displaySplashScreen(tft, VERSION);
 
       // Redraw display header
       redrawDisplayHeader();

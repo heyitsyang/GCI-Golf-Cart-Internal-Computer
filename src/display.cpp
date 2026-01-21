@@ -116,3 +116,38 @@ void redrawAllLines(TFT_eSPI &tft, const char* thisMac, PairingStatus status,
     displayTempLine(tft, tempF, sensorConnected);
     displayFuelBattLine(tft, fuelVolts, battVolts);
 }
+
+void displaySplashScreen(TFT_eSPI &tft, const char* version) {
+    // Clear screen
+    tft.fillScreen(TFT_BLACK);
+
+    // Get actual screen width after rotation
+    int16_t screenWidth = tft.width();
+
+    // Use top-center datum for centered text
+    tft.setTextDatum(TC_DATUM);
+
+    // Draw "GCI" in large yellow font, centered
+    tft.setTextFont(4);
+    tft.setTextSize(2);  // Double size for large text
+    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+    tft.drawString("GCI", screenWidth / 2, 20);
+
+    // Draw "Ver. x.x.x" in white, centered below
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+    char versionLine[32];
+    snprintf(versionLine, sizeof(versionLine), "Ver. %s", version);
+    tft.drawString(versionLine, screenWidth / 2, 85);
+
+    // Reset datum to top-left for other functions
+    tft.setTextDatum(TL_DATUM);
+
+    // Display for 2.5 seconds
+    delay(2500);
+
+    // Clear screen before returning
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextSize(1);  // Reset to default size
+}
