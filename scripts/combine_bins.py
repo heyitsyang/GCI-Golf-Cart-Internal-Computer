@@ -1,3 +1,26 @@
+"""
+combine_bins.py - PlatformIO post-build script for creating combined factory binaries
+
+This script merges bootloader, partition table, and application firmware into a single
+flashable binary image for ESP32.
+
+Usage:
+  - First flash with {env}_fw_combo.bin: Sets up the complete flash layout (bootloader,
+    partition table, and application). Any data partitions (like NVS for preferences)
+    start empty.
+
+  - Subsequent flashes with firmware.bin: Only overwrites the application partition at
+    0x10000. The bootloader, partition table, and NVS remain untouched, preserving
+    your settings.
+
+  - Factory reset by re-flashing {env}_fw_combo.bin: Overwrites everything from address
+    0x0000, effectively wiping NVS and any other stored data back to a clean state.
+
+Note: If you change the partition table layout between firmware versions, use the combo
+binary to ensure the new partition scheme is applied.
+
+"""
+
 Import("env")
 import os
 import sys

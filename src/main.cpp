@@ -275,55 +275,136 @@ void loop() {
 
   // Check for button state
   bool buttonPressed = (digitalRead(BUTTON_PIN) == LOW);
+  static bool splashDisplayed = false;  // Track if splash is currently shown
+  static bool screenWasOff = false;     // Track if screen was off when button pressed
 
   if (buttonPressed && !buttonWasPressed) {
     // Button just pressed
     buttonPressStartTime = millis();
     buttonWasPressed = true;
+    splashDisplayed = false;
+    screenWasOff = !screenOn;
+
+    // If screen is off, turn it on immediately and redraw
+    if (screenWasOff) {
+      tft.fillScreen(TFT_BLACK);  // Clear any artifacts
+      digitalWrite(TFT_BL, HIGH);
+      screenOn = true;
+      redrawDisplayHeader();
+      sendData = true;
+      screenStartTime = millis();
+    }
   } else if (buttonPressed && buttonWasPressed) {
     // Button is being held
     unsigned long pressDuration = millis() - buttonPressStartTime;
 
     if (pressDuration >= (BUTTON_HOLD_ERASE_SECS * 1000)) {
-      // Long press threshold reached - erase paired MAC
-      preferences.remove("peer_mac");
-      Serial.println("Paired MAC address erased from EEPROM");
-
-      // Display message
+      // Long press threshold reached - ask for confirmation
       tft.fillScreen(TFT_BLACK);
-      tft.setCursor(10, 60);
+      tft.setTextSize(1);  // Ensure normal text size
+      tft.setTextDatum(TL_DATUM);  // Ensure normal datum
+      tft.setCursor(10, 40);
       tft.setTextFont(4);
+      tft.setTextColor(TFT_RED, TFT_BLACK);
+      tft.println("Reset GCD pairing?");
+      tft.setCursor(10, 80);
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      tft.println("Press to confirm");
+
+      // Wait for button release first
+      while (digitalRead(BUTTON_PIN) == LOW) {
+        delay(50);
+      }
+      delay(200); // Debounce
+
+      // Wait for confirmation press (5 second timeout)
+      unsigned long confirmStartTime = millis();
+      bool confirmed = false;
+
+      while ((millis() - confirmStartTime) < 5000) {
+        if (digitalRead(BUTTON_PIN) == LOW) {
+          confirmed = true;
+          // Wait for release
+          while (digitalRead(BUTTON_PIN) == LOW) {
+            delay(50);
+          }
+          break;
+        }
+        delay(50);
+      }
+
+      if (confirmed) {
+        // Erase paired MAC
+        preferences.remove("peer_mac");
+        Serial.println("Paired MAC address erased from EEPROM");
+
+        // Display confirmation message
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextSize(1);
+        tft.setTextDatum(TL_DATUM);
+        tft.setCursor(10, 40);
+        tft.setTextFont(4);
+        tft.setTextColor(TFT_GREEN, TFT_BLACK);
+        tft.println("Pairing reset!");
+
+        delay(2000);
+
+        // Reboot
+        Serial.println("Rebooting...");
+        ESP.restart();
+      } else {
+        // Cancelled - return to normal display
+        Serial.println("Pairing reset cancelled");
+        tft.fillScreen(TFT_BLACK);
+        tft.setTextSize(1);
+        tft.setTextDatum(TL_DATUM);
+        tft.setCursor(10, 40);
+        tft.setTextFont(4);
+        tft.setTextColor(TFT_RED, TFT_BLACK);
+        tft.println("Cancelled");
+
+        delay(1000);
+
+        // Redraw normal display
+        tft.fillScreen(TFT_BLACK);
+        redrawDisplayHeader();
+        sendData = true;
+        screenStartTime = millis();
+      }
+
+      buttonWasPressed = false;
+      splashDisplayed = false;
+    } else if (!splashDisplayed && pressDuration >= 500) {
+      // Button held but not yet at reset threshold - show splash screen
+      tft.fillScreen(TFT_BLACK);
+      int16_t screenWidth = tft.width();
+      tft.setTextDatum(TC_DATUM);
+      tft.setTextFont(4);
+      tft.setTextSize(2);
       tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-      tft.println("Paired MAC address");
-      tft.setCursor(10, 90);
-      tft.println("erased");
-
-      // Wait for message timeout
-      delay(PAIRED_MAC_MSG_TIMEOUT * 1000);
-
-      // Reboot
-      Serial.println("Rebooting...");
-      ESP.restart();
+      tft.drawString("GCI", screenWidth / 2, 20);
+      tft.setTextSize(1);
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      char versionLine[32];
+      snprintf(versionLine, sizeof(versionLine), "Ver. %s", VERSION);
+      tft.drawString(versionLine, screenWidth / 2, 85);
+      tft.setTextDatum(TL_DATUM);
+      tft.setTextSize(1);  // Reset text size
+      splashDisplayed = true;
     }
   } else if (!buttonPressed && buttonWasPressed) {
-    // Button just released (short press)
-    if (!screenOn) {
-      // Turn screen back on
-      digitalWrite(TFT_BL, HIGH);
-      screenOn = true;
-
-      // Show splash screen
-      displaySplashScreen(tft, VERSION);
-
-      // Redraw display header
-      redrawDisplayHeader();
-
-      sendData = true;
-      screenStartTime = millis();
-    }
-
+    // Button just released
     buttonWasPressed = false;
-    delay(200); // Debounce delay
+
+    // If splash was displayed, redraw normal screen
+    if (splashDisplayed) {
+      tft.fillScreen(TFT_BLACK);
+      redrawDisplayHeader();
+      sendData = true;
+    }
+    splashDisplayed = false;
+    screenWasOff = false;
+    screenStartTime = millis();
   }
 
   // Check if screen timeout has been reached
