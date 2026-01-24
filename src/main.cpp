@@ -155,6 +155,10 @@ void setup(void) {
   pinMode(RELAY_2_PIN, OUTPUT);
   pinMode(RELAY_3_PIN, OUTPUT);
   pinMode(RELAY_4_PIN, OUTPUT);
+  digitalWrite(RELAY_1_PIN, LOW);
+  digitalWrite(RELAY_2_PIN, LOW);
+  digitalWrite(RELAY_3_PIN, LOW);
+  digitalWrite(RELAY_4_PIN, LOW);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(SLEEP_PIN, INPUT_PULLUP);
   pinMode(TFT_BL, OUTPUT);
