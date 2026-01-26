@@ -21,7 +21,7 @@
 #define TELEMETRY_MIN_INTERVAL_MS 5000  // Minimum 5 seconds between telemetry packets
 #define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
 
-#define SLEEP_PIN 5         // pull LOW to sleep
+#define SLEEP_PIN 35         // pull LOW to sleep
 #define BUTTON_PIN 12       // GPIO34-39 do not have pullups
 #define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
 #define ADC_FUEL_PIN 36     // 3.3v max
