@@ -21,7 +21,7 @@
 #define TELEMETRY_MIN_INTERVAL_MS 5000  // Minimum 5 seconds between telemetry packets
 #define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
 
-#define SLEEP_PIN 35         // pull LOW to sleep
+#define SLEEP_PIN 35         // LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
 #define BUTTON_PIN 12       // GPIO34-39 do not have pullups
 #define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
 #define ADC_FUEL_PIN 36     // 3.3v max
@@ -160,7 +160,7 @@ void setup(void) {
   digitalWrite(RELAY_3_PIN, LOW);
   digitalWrite(RELAY_4_PIN, LOW);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(SLEEP_PIN, INPUT_PULLUP);
+  pinMode(SLEEP_PIN, INPUT);  // External pull-down: LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH); // Turn on backlight initially
 
