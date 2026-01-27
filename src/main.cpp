@@ -21,7 +21,7 @@
 #define TELEMETRY_MIN_INTERVAL_MS 5000  // Minimum 5 seconds between telemetry packets
 #define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
 
-#define SLEEP_PIN 35         // LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
+#define SLEEP_PIN 35        // LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
 #define BUTTON_PIN 12       // GPIO34-39 do not have pullups
 #define ONE_WIRE_PIN 13     // DS18B20 temperature sensor and any other One-Wire
 #define ADC_FUEL_PIN 36     // 3.3v max
@@ -161,6 +161,7 @@ void setup(void) {
   digitalWrite(RELAY_4_PIN, LOW);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(SLEEP_PIN, INPUT);  // External pull-down: LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
+  gpio_hold_dis((gpio_num_t)TFT_BL);  // Release hold from deep sleep (if any)
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH); // Turn on backlight initially
 
@@ -274,7 +275,7 @@ void loop() {
 
   if (!enteringSleep && debounced_sleep_state) {
     enteringSleep = true;
-    enterLightSleep();
+    enterDeepSleep();
   }
 
   // Check for button state
@@ -611,13 +612,13 @@ void BeforeSleeping() {
   tft.setCursor(1, 40);
   tft.setTextFont(4);
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.println("ENTERING\nSLEEP MODE");
+  tft.println("ENTERING DEEP\nSLEEP MODE");
 
   // Display message for 2 seconds
   delay(2000);
 }
 
-void enterLightSleep() {
+void enterDeepSleep() {
   // Execute pre-sleep tasks
   BeforeSleeping();
   // Clear and turn off display
@@ -632,25 +633,17 @@ void enterLightSleep() {
   WiFi.disconnect(true);
   esp_wifi_stop();
 
-  // Configure GPIO wake-up on SLEEP_PIN going HIGH
-  esp_err_t err = gpio_wakeup_enable((gpio_num_t)SLEEP_PIN, GPIO_INTR_HIGH_LEVEL);
-  if (err != ESP_OK) {
-    return; // Failed to configure wake-up
-  }
+  // Configure ext0 wake-up on SLEEP_PIN going HIGH (1 = wake on HIGH level)
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)SLEEP_PIN, 1);
 
-  err = esp_sleep_enable_gpio_wakeup();
-  if (err != ESP_OK) {
-    return; // Failed to enable GPIO wakeup
-  }
+  // Hold backlight pin LOW during deep sleep (GPIO loses state otherwise)
+  gpio_hold_en((gpio_num_t)TFT_BL);
 
   // Small delay to ensure operations complete
   delay(100);
 
-  // Enter light sleep (will wake when SLEEP_PIN goes HIGH)
-  esp_light_sleep_start();
-
-  // After waking from light sleep, reboot for clean state
-  ESP.restart();
+  // Enter deep sleep (will wake and reboot when SLEEP_PIN goes HIGH)
+  esp_deep_sleep_start();
 }
 
 void createMacAddressStr(char* MacStr){

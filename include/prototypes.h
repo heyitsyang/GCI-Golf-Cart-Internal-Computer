@@ -11,7 +11,7 @@ void redrawDisplayHeader();
 
 // Sleep functions
 void BeforeSleeping();
-void enterLightSleep();
+void enterDeepSleep();
 
 // MAC address utilities
 void createMacAddressStr(char* MacStr);
