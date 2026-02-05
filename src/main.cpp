@@ -91,6 +91,7 @@ char pairedMacStr[18] = "";  // Store the paired MAC address string for display 
 int consecutiveHeartbeatsMissed = HEARTBEAT_MISS_THRESHOLD;  // Start disconnected until first heartbeat
 unsigned long lastHeartbeatCheckTime = 0;
 
+// -99 indicates invalid/uninitialized
 // variables for outbound data
 int modeHeadLights = -99;
 int outdoorLuminosity = -99;
@@ -150,15 +151,17 @@ void setup(void) {
   Serial.begin(9600);
   sensors.begin();
 
-  //set pinModes
+  // set relay pinModes
   pinMode(RELAY_1_PIN, OUTPUT);
   pinMode(RELAY_2_PIN, OUTPUT);
   pinMode(RELAY_3_PIN, OUTPUT);
   pinMode(RELAY_4_PIN, OUTPUT);
+  // set relays to LOW (off)
   digitalWrite(RELAY_1_PIN, LOW);
   digitalWrite(RELAY_2_PIN, LOW);
   digitalWrite(RELAY_3_PIN, LOW);
   digitalWrite(RELAY_4_PIN, LOW);
+
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(SLEEP_PIN, INPUT);  // External pull-down: LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
   gpio_hold_dis((gpio_num_t)TFT_BL);  // Release hold from deep sleep (if any)
