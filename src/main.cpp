@@ -20,6 +20,7 @@
 
 #define TELEMETRY_MIN_INTERVAL_MS 5000  // Minimum 5 seconds between telemetry packets
 #define HEARTBEAT_MISS_THRESHOLD 4  // Number of missed heartbeats before connection is considered lost
+#define STARTUP_GRACE_SECS 30  // Grace period to allow GCD connection before acting on SLEEP_PIN (matches GCD)
 
 #define SLEEP_PIN 35        // LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
 #define BUTTON_PIN 12       // GPIO34-39 do not have pullups
@@ -276,7 +277,12 @@ void loop() {
     }
   }
 
-  if (!enteringSleep && debounced_sleep_state) {
+  // Act on SLEEP_PIN when either:
+  // 1. GCD is connected (early exit - GCD has received our heartbeat and will enter GCI_MODE)
+  // 2. Grace period elapsed (safeguard - sleep even if GCD never connected)
+  bool gcd_connected = (consecutiveHeartbeatsMissed < HEARTBEAT_MISS_THRESHOLD);
+  bool grace_elapsed = millis() >= (STARTUP_GRACE_SECS * 1000UL);
+  if (!enteringSleep && debounced_sleep_state && (gcd_connected || grace_elapsed)) {
     enteringSleep = true;
     enterDeepSleep();
   }
