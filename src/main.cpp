@@ -35,7 +35,7 @@
 #define ESPNOW_CHANNEL 1
 #define ESPNOW_MAX_PAYLOAD 240  // Max payload after wrapper overhead subtracted (ESP-NOW limit: 250 bytes, wrapper: 9 bytes, payload: 241 bytes)
 
-#define DISPLAY_ORIENTATION 1       // 0 = Normal, 1 = Flipped (180 degrees)
+#define DISPLAY_ORIENTATION 0       // 0 = Normal, 1 = Flipped (180 degrees)
 
 // ESP-NOW message types (must match GCD)
 typedef enum {
