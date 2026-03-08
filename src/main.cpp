@@ -81,7 +81,7 @@ bool buttonWasPressed = false;
 bool enteringSleep = false;  // Flag to prevent multiple sleep attempts
 
 // SLEEP_PIN debounce configuration
-#define SLEEP_PIN_DEBOUNCE_MS 400
+#define SLEEP_PIN_DEBOUNCE_MS 1000
 int last_sleep_pin_state = HIGH;
 int current_sleep_raw_state = HIGH;
 unsigned long sleep_state_change_time_ms = 0;
@@ -165,6 +165,24 @@ void setup(void) {
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(SLEEP_PIN, INPUT);  // External pull-down: LOW = sleep (ignition OFF), HIGH = awake (ignition ON)
+
+  // Check for spurious wake before any display init.
+  // Require SLEEP_PIN to remain HIGH for the full settle window — if it dips LOW
+  // at any point, treat it as a glitch and go back to sleep. This handles
+  // oscillating or multi-pulse glitch patterns.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
+    unsigned long settle_start = millis();
+    while (millis() - settle_start < 1000) {
+      if (digitalRead(SLEEP_PIN) == LOW) {
+        Serial.println("Spurious wake detected - returning to deep sleep");
+        Serial.flush();
+        esp_sleep_enable_ext0_wakeup((gpio_num_t)SLEEP_PIN, 1);
+        esp_deep_sleep_start();
+      }
+      delay(10);
+    }
+  }
+
   gpio_hold_dis((gpio_num_t)TFT_BL);  // Release hold from deep sleep (if any)
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH); // Turn on backlight initially
